@@ -13,17 +13,30 @@
 #include "grid_environment.h"
 #include "location.h"
 #include "interfaces.h"
+#include "location_module.h"
 
-typedef struct grid_lm_ {
-    // short-term/working memory (buffer) for a yet unclassified object OR a yet un-modeled object
+#include "output_layer.h"
+#include "feature_layer.h"
+#include "location_layer.h"
 
-    // long-term object memory that models all learnt objects for matching
+typedef struct learning_module_ {
+    // layer 3
+    output_layer_t output_net;
 
-} grid_lm;
+    // layer 4
+    feature_layer_t feature_net;
 
-void init_learning_module(grid_lm* lm);
+    // layer 6
+    location_layer_t location_net;
+} learning_module;
 
-void learning_module_explore(grid_lm* lm, features_t features, pose_t pose);
-void learning_module_match(grid_lm* lm, features_t features, pose_t pose);
+void init_learning_module(
+    learning_module* lm, 
+    output_layer_params_t l3_params,
+    feature_layer_params_t l4_params,
+    location_layer_params_t l6_params
+);
+
+void learning_module_step(learning_module* lm, features_t features, vec2d movement);
 
 #endif

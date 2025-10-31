@@ -3,16 +3,16 @@
 /**
  * @brief 
  * 
- * @param output need to be malloc-ed by the callers
+ * @param output need to be initialized by the caller!
  * @param input 
  * @param range 
  * @param num_bits 
  * @param num_active_bits 
  */
-void encode_integer(u8* output, u32 input, pair_u32 range, u32 num_bits, u32 num_active_bits) {
-    u32 num_buckets = num_bits - num_active_bits + 1;
+void encode_integer(u8* output, u32 output_length, u32 non_null_count, u32 input, u32 min, u32 max) {
+    u32 num_buckets = output_length - non_null_count + 1;
 
-    u32 i = (num_buckets * (input - range.first)) / (range.second - range.first);
+    u32 i = (num_buckets * (input - min)) / (max - min);
 
     // Let's calculate the output on the fly 
     // We could cache these results or pre-compute them so that we only need 
@@ -23,7 +23,7 @@ void encode_integer(u8* output, u32 input, pair_u32 range, u32 num_bits, u32 num
     // However this requires that the output stay unchanged in the later stages
     //      which I believe it is!
 
-    for(u32 j = 0; j < num_bits; ++j) {
-        output[j] = j >= i && j < i + num_active_bits;
-    }
+    for(u32 j = 0; j < i; ++j) output[j] = 0;
+    for(u32 j = i; j < i + non_null_count; ++j) output[j] = 1;
+    for(u32 j = i + non_null_count; j < output_length; ++j) output[j] = 0;
 }

@@ -14,8 +14,8 @@ void init_grid_env(grid_t* env, u32 rows, u32 cols) {
 void populate_grid_env_random(grid_t* env) {
     for(u32 i = 0; i < env->rows; ++i) {
         for(u32 j = 0; j < env->rows; ++j) {
-            MAT(env->depths, i, j) = unif_rand_range_u32(0, 4);
-            MAT(env->values, i, j) = unif_rand_range_u32(10, 50);
+            MAT(env->depths, i, j) = unif_rand_range_u32(GRID_ENV_MIN_DEPTH, GRID_ENV_MAX_DEPTH);
+            MAT(env->values, i, j) = unif_rand_range_u32(GRID_ENV_MIN_VALUE, GRID_ENV_MAX_VALUE);
         }
     }
 }
@@ -39,7 +39,7 @@ bounds_t get_bounds(u32 env_size_x, u32 env_size_y, u32 patch_size_x, u32 patch_
  * @param location 
  * @param patch_radius 
  */
-void extract_patch(grid_t* patch, grid_t* env, vec2d location, u32 patch_sidelen) {
+void extract_patch(grid_t* patch, grid_t* env, uvec2d location, u32 patch_sidelen) {
     assertf(patch_sidelen == patch->rows && patch_sidelen== patch->cols, 
         "mismatch between patch_radius and actually allocated patch shape");
     assertf(patch_sidelen % 2 != 0, "patch cannot be of even sidelength");

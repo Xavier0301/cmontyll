@@ -93,6 +93,13 @@ DEFINE_MATRIX_STRUCT(u32);
 DEFINE_MATRIX_STRUCT(u16);
 DEFINE_MATRIX_STRUCT(u8);
 
+#define DEFINE_MATRIX_STRUCT_WNAME(symbol, name) \
+    typedef struct name##_ { \
+        u32 rows; \
+        u32 cols; \
+        DATA_TYPE(symbol)* data; \
+    } name
+
 #define MAT(t, i, j) ((t).data[((i) * (t).cols) + (j)])
 #define MATP(t, i, j) ((t).data + ((i) * (t).cols) + (j))
 

@@ -1,6 +1,8 @@
 #ifndef SPARSE_H
 #define SPARSE_H
 
+#include <stdlib.h>
+
 #include "types.h"
 
 /* SPARSE VECTOR REPRESENTATION!
@@ -33,15 +35,17 @@ typedef struct spvec_u1_ {
         u16* indices;
 } spvec_u1;
 
+void init_spvec_u1(spvec_u1* v, u16 length, u16 non_null_count);
+
 #define CSR_TYPE_(symbol) csr_##symbol##_
 #define CSR_TYPE(symbol) csr_##symbol
 
 #define DEFINE_CSR_STRUCT(symbol) \
     typedef struct CSR_TYPE_(symbol) { \
-        symbol* rows; \
-        symbol* cols; \
-        u8* data; \
-        symbol length; \
+        u16* rows; \
+        u16* cols; \
+        symbol* data; \
+        u16 length; \
     } CSR_TYPE(symbol)
 
 DEFINE_CSR_STRUCT(u8);
@@ -54,11 +58,16 @@ DEFINE_CSR_STRUCT(u32);
 #define COO_SUBTYPE_(symbol) coo_entry_##symbol##_
 #define COO_SUBTYPE(symbol) coo_entry_##symbol
 
+typedef struct COO_SUBTYPE_(u1) {
+    u16 row;
+    u16 col;
+} COO_SUBTYPE(u1);
+
 #define DEFINE_COO_SUBSTRUCT(symbol) \
     typedef struct COO_SUBTYPE_(symbol) { \
-        symbol row; \
-        symbol col; \
-        u8 data; \
+        u16 row; \
+        u16 col; \
+        symbol data; \
     } COO_SUBTYPE(symbol)
 
 DEFINE_COO_SUBSTRUCT(u8);
@@ -68,11 +77,22 @@ DEFINE_COO_SUBSTRUCT(u32);
 #define DEFINE_COO_STRUCT(symbol) \
     typedef struct COO_TYPE_(symbol) { \
         coo_entry_##symbol* data; \
-        symbol length; \
+        u16 length; \
     } COO_TYPE(symbol)
 
+DEFINE_COO_STRUCT(u1);
 DEFINE_COO_STRUCT(u8);
 DEFINE_COO_STRUCT(u16);
 DEFINE_COO_STRUCT(u32);
+
+#define DEFINE_COO_STRUCT_WNAME(symbol, name) \
+    typedef struct name##_ { \
+        symbol* data; \
+        u16 length; \
+    } name
+
+void print_spvec_u8(u8* v, u32 length);
+
+void print_packed_spvec_u32(u32* v, u32 unpacked_length);
 
 #endif

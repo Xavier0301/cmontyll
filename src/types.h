@@ -3,6 +3,8 @@
 
 #include <stdint.h>
 
+#define REPR_u8(x) ((u8) (round(x * 255.0f)))
+
 typedef int8_t i8;
 typedef int16_t i16;
 typedef int32_t i32;
@@ -41,5 +43,13 @@ DEFINE_PAIR_STRUCT(u32);
 DEFINE_INDEX2D_STRUCT(u8);
 DEFINE_INDEX2D_STRUCT(u16);
 DEFINE_INDEX2D_STRUCT(u32);
+
+static inline u8 safe_add_u8(u8 a, u8 b) {
+    return (255 - a < b) ? 255 : a + b;
+}
+
+static inline u8 safe_sub_u8(u8 a, u8 b) {
+    return (a < b) ? 0 : a - b;
+}
 
 #endif // TYPES_H

@@ -2,6 +2,25 @@
 
 #include "assertf.h"
 
+#include "encoder.h"
+
+void init_sensor_module(grid_sm* sm, u32 env_min_value, u32 env_max_value, u32 num_columns) {
+    sm->p.env_min_value = env_min_value;
+    sm->p.env_max_value = env_max_value;
+
+    sm->p.encoding_length = 128;
+    sm->p.encoding_non_null_count = sm->p.encoding_length >> 3;
+
+    sm->encoding_buffer = calloc(sm->p.encoding_length, sizeof(*sm->encoding_buffer));
+
+    init_pooler(
+        &sm->pooler, 
+        sm->p.encoding_length, 
+        num_columns,
+        1.0, 1, 1
+    );
+}
+
 /**
  * @brief Get features and pose from the patch observed
  * 
@@ -10,30 +29,61 @@
  * @param patch 
  * @param location 
  */
-void sensor_module(features_t* features, pose_t* pose, grid_t patch, vec2d location) {
-    // -- Pose --
-    vec3d point_normal;
-    get_point_normal_u8(&point_normal, patch.depths, location);
+void sensor_module(grid_sm sm, features_t* features, grid_t patch, uvec2d patch_center) {
+    // The sensor module is responsible for getting in raw data and producing features
+    // In tbp.monty, features are both (1) simple features extracted from the patch rgb
+    //      and (2) pose extracted from the patch depth
+    // In our case, our features will ultimately be encoded into SDRs
+    //      - For the pose SDR to make sense, we need 
+    //          a mechanism to properly encode 3d vectors into SDRs through grid cells
+    //      - The features SDR can just be obtained by simple encoding + pooling
+    //          Although it would be much "better" to have a smarter mechanism to transform
+    //          an image patch into an SDR with all the nice SDR properties that would come with it
 
-    i32 k1_fp, k2_fp;
-    vec3d dir1, dir2;
-    get_principal_curvatures_u8(&k1_fp, &k2_fp, &dir1, &dir2, patch.depths, location);
+    // // -- Pose --
+    // vec3d point_normal;
+    // get_point_normal_u8(&point_normal, patch.depths, patch_center);
 
-    pose->point_normal = point_normal;
-    pose->curvature_direction_1 = dir1;
-    pose->curvature_direction_2 = dir2;
-    pose->pose_fully_defined = (u32) abs((i32) k1_fp - (i32) k2_fp) > PC1_IS_PC2_THRESHOLD_FP;
+    // i32 k1_fp, k2_fp;
+    // vec3d dir1, dir2;
+    // get_principal_curvatures_u8(&k1_fp, &k2_fp, &dir1, &dir2, patch.depths, patch_center);
 
-    // -- Features --
-    features->value = MAT(patch.values, location.x, location.y);
-    features->principal_curvature_1_fp = k1_fp;
-    features->principal_curvature_2_fp = k2_fp;
+    // pose_3d_repr_t pose_3d;
 
-    features->min_depth = mat_u8_min(patch.depths);
-    features->max_depth = mat_u8_max(patch.depths);
-    features->mean_depth = mat_u8_mean(patch.depths);
+    // pose_3d.point_normal = point_normal;
+    // pose_3d.curvature_direction_1 = dir1;
+    // pose_3d.curvature_direction_2 = dir2;
+    // pose_3d.pose_fully_defined = (u32) abs((i32) k1_fp - (i32) k2_fp) > PC1_IS_PC2_THRESHOLD_FP;
 
-    features->pose_fully_defined = pose->pose_fully_defined;
+    // // -- Features --
+    // features_int_repr_t features_int;
+
+    // features_int.value = MAT(patch.values, patch_center.x, patch_center.y);
+    // features_int.principal_curvature_1_fp = k1_fp;
+    // features_int.principal_curvature_2_fp = k2_fp;
+
+    // features_int.min_depth = mat_u8_min(patch.depths);
+    // features_int.max_depth = mat_u8_max(patch.depths);
+    // features_int.mean_depth = mat_u8_mean(patch.depths);
+
+    // features_int.pose_fully_defined = pose_3d.pose_fully_defined;
+
+    // -- Convert feature/pose from full representation to SDR representation --
+
+    // Only simple encoding are needed here
+    //  The network learns to map the simple and not-strictly-sparse encodings 
+    //  into strictly sparse representations via pooling
+
+    encode_integer(
+        sm.encoding_buffer, 
+        sm.p.encoding_length, sm.p.encoding_non_null_count, 
+        MAT(patch.values, patch_center.x, patch_center.y), 
+        sm.p.env_min_value, sm.p.env_max_value // depends on the environment
+    );
+    
+    pooler_step(&sm.pooler, sm.encoding_buffer, sm.p.encoding_length);
+
+    features->active_columns = sm.pooler.column_activations;
 }
 
 /**
@@ -122,15 +172,15 @@ void get_principal_curvatures_u8(i32* k1_fp, i32* k2_fp, vec3d* dir1, vec3d* dir
 
     // --- Hessian elements (using i32 for safety) ---
     i32 z_c = MAT(depths, y, x);
-    i32 H_xx = (i32) MAT(depths, y, x + 1) - 2 * z_c + (i32) MAT(depths, y, x - 1);
-    i32 H_yy = (i32) MAT(depths, y + 1, x) - 2 * z_c + (i32) MAT(depths, y - 1, x);
+    i32 H_xx = (i32) MAT(depths, y, x + 1) - (z_c << 1) + (i32) MAT(depths, y, x - 1);
+    i32 H_yy = (i32) MAT(depths, y + 1, x) - (z_c << 1) + (i32) MAT(depths, y - 1, x);
     i32 H_xy = ((i32) MAT(depths, y + 1, x + 1) - (i32) MAT(depths, y + 1, x - 1) -
-                (i32) MAT(depths, y - 1, x + 1) + (i32) MAT(depths, y - 1, x - 1)) / 4;
+                (i32) MAT(depths, y - 1, x + 1) + (i32) MAT(depths, y - 1, x - 1)) >> 2;
 
     // --- Eigenvector Calculation ---
     i32 trace = H_xx + H_yy;
     i32 diff = H_yy - H_xx;
-    i32 two_H_xy = 2 * H_xy;
+    i32 two_H_xy = H_xy << 1;
 
     vec2d dir1_xy;
 
@@ -151,8 +201,8 @@ void get_principal_curvatures_u8(i32* k1_fp, i32* k2_fp, vec3d* dir1, vec3d* dir
         i32 sqrt_disc = (i32) isqrt32(discriminant_sq);
 
         // Curvatures are the eigenvalues (Tr +/- sqrt(disc))/2
-        *k1_fp = ((trace + sqrt_disc) << CURVATURE_FRACTIONAL_BITS) / 2;
-        *k2_fp = ((trace - sqrt_disc) << CURVATURE_FRACTIONAL_BITS) / 2;
+        *k1_fp = ((trace + sqrt_disc) << CURVATURE_FRACTIONAL_BITS) >> 1;
+        *k2_fp = ((trace - sqrt_disc) << CURVATURE_FRACTIONAL_BITS) >> 1;
 
         // Use the robust method to find a non-zero eigenvector.
         dir1_xy.x = two_H_xy;
@@ -175,14 +225,14 @@ void get_principal_curvatures_u8(i32* k1_fp, i32* k2_fp, vec3d* dir1, vec3d* dir
 
     dir1->x = dir1_xy.x;
     dir1->y = dir1_xy.y;
-    dir1->z = (dir1_xy.x * delta_x + dir1_xy.y * delta_y) / 2;
+    dir1->z = (dir1_xy.x * delta_x + dir1_xy.y * delta_y) >> 1;
 
     dir2->x = dir2_xy.x;
     dir2->y = dir2_xy.y;
-    dir2->z = (dir2_xy.x * delta_x + dir2_xy.y * delta_y) / 2;
+    dir2->z = (dir2_xy.x * delta_x + dir2_xy.y * delta_y) >> 1;
 }
 
-void print_features(features_t f) {
+void print_features(features_int_repr_t f) {
     printf("features: value=%u min_depth=%u max_depth=%u mean_depth=%u principal_curvature_1=%d(%d) principal_curvature_2=%d(%d) pose_fully_defined=%d\n",
         f.value,
         f.min_depth,
@@ -194,7 +244,7 @@ void print_features(features_t f) {
     );
 }
 
-void print_pose(pose_t p) {
+void print_pose(pose_3d_repr_t p) {
     printf("pose:\n");
     printf("  point_normal: x=%d y=%d z=%d\n",
         (int)p.point_normal.x, (int)p.point_normal.y, (int)p.point_normal.z);

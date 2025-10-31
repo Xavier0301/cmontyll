@@ -8,7 +8,8 @@
 #include "math.h"
 
 #include "types.h"
+#include "sparse.h"
 
-void encode_integer(u8* output, u32 input, pair_u32 range, u32 num_bits, u32 num_active_bits);
+void encode_integer(u8* output, u32 output_length, u32 non_null_count, u32 input, u32 min, u32 max);
 
 #endif // ENCODER_H
