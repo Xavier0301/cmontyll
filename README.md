@@ -9,7 +9,7 @@
 To compile the code
 ```
 git clone git@github.com:Xavier0301/cmontyll.git cmontyll
-cd cdmontyll
+cd cmontyll
 make
 ```
 To run Montyll for 100 steps:
