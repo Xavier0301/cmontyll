@@ -5,7 +5,8 @@ LDLIBS := -lm
 PRINT ?= 0 # Can be 0 (no print) 1 (standard) 2 (verbose)
 NUM_NEIGHBORS ?= 20
 
-ENV_FLAGS := -DPRINT=${PRINT} -DNUM_NEIGHBORS=${NUM_NEIGHBORS}
+SINGLE_LM_ENV_FLAGS := -DPRINT=${PRINT}
+MULTI_LM_ENV_FLAGS := -DPRINT=${PRINT} -DNUM_NEIGHBORS=${NUM_NEIGHBORS}
 
 # ---------------------------------------------------------
 # OPERATING SYSTEM
@@ -41,17 +42,17 @@ SHARED_SRCS := $(filter-out $(MAIN_SRCS), $(ALL_SRCS))
 
 all: main
 
-# Standard O0
+# Standard: optimized O3
 main: src/main.c $(SHARED_SRCS)
-	$(CC) $(CFLAGS) $(ENV_FLAGS) -g -fno-omit-frame-pointer -DNDEBUG -O0  $^ -o $@ $(LDLIBS)
+	$(CC) $(CFLAGS) $(SINGLE_LM_ENV_FLAGS) -g -fno-omit-frame-pointer -DNDEBUG -O3  $^ -o $@ $(LDLIBS)
 
-# Standard optimized O3
-main_opt: src/main.c $(SHARED_SRCS)
-	$(CC) $(CFLAGS) $(ENV_FLAGS) -DNDEBUG -O3 $^ -o $@ $(LDLIBS)
+# Non optimized O0 for debugging
+main_no_opt: src/main.c $(SHARED_SRCS)
+	$(CC) $(CFLAGS) $(SINGLE_LM_ENV_FLAGS) -g -fno-omit-frame-pointer -O0 $^ -o $@ $(LDLIBS)
 
 # Multi-lm using OMP
 scale-out: src/scale_out.c $(SHARED_SRCS)
-	$(CC) $(CFLAGS) $(ENV_FLAGS) $(OMP_FLAGS) -g -fno-omit-frame-pointer -DNDEBUG -O3 $^ -o $@ $(LDLIBS)
+	$(CC) $(CFLAGS) $(MULTI_LM_ENV_FLAGS) $(OMP_FLAGS) -g -fno-omit-frame-pointer -DNDEBUG -O3 $^ -o $@ $(LDLIBS)
 
 # ---------------------------------------------------------
 # GCC Build Rule (To fix the 256-thread limit on macOS from kmp)
@@ -60,7 +61,7 @@ scale-out: src/scale_out.c $(SHARED_SRCS)
 GCC_BIN ?= gcc-15
 
 scale-out-gcc: src/scale_out.c $(SHARED_SRCS)
-	$(GCC_BIN) $(CFLAGS) $(ENV_FLAGS) -fopenmp -g -fno-omit-frame-pointer -DNDEBUG -O3 $^ -o $@ $(LDLIBS)
+	$(GCC_BIN) $(CFLAGS) $(MULTI_LM_ENV_FLAGS) -fopenmp -g -fno-omit-frame-pointer -DNDEBUG -O3 $^ -o $@ $(LDLIBS)
 
 clean:
 	rm -f main main_opt scale-out scale-out-gcc *.o *~ 

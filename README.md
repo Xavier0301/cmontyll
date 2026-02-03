@@ -17,23 +17,6 @@ To run Montyll for 100 steps:
 ./main 100
 ```
 
-### Single learning module mode
-
-```
-make main
-``` 
-compiles with no optimization (`-O0`) and 
-```
-make main_opt
-``` 
-compiles with all optimizations (`-O3`). To run the code for 100 steps
-```
-./main 100
-```
-```
-./main_opt 100
-```
-
 ### Multiple learning modules mode
 
 For many learning modules:
