@@ -1,17 +1,17 @@
 #include "htm.h"
 
 void htm_prediction_integrate_context(
-    u32* num_spiking_segments,
-    segment_t* context_pointer, u32* incident_activity,
+    u32* output_num_spiking_segments, 
+    segment_t** context_pointer, u8** spike_count_pointer, 
+    u32* incident_activity, lmat_u32* optional_external_incident_activity,
     enum segment_index_type index_type, u8 num_segments,
     u8 permanence_threshold, u8 segment_spiking_threshold
 ) {
     for(u32 seg = 0; seg < num_segments; ++seg) {
-        context_pointer->connection_count = 0; // reset this cache
-
+        
         u32 cell_accumulator = 0;
-        for(u32 conn = 0; conn < context_pointer->num_connections; ++conn) {
-            segment_data seg_data = context_pointer->connections[conn];
+        for(u32 conn = 0; conn < (*context_pointer)->num_connections; ++conn) {
+            segment_data seg_data = (*context_pointer)->connections[conn];
 
             u32 is_cell_active;
             if(index_type == INTERNAL_OUTPUT_INDEX_TYPE) {
@@ -19,7 +19,11 @@ void htm_prediction_integrate_context(
                 is_cell_active = GET_BIT_FROM_PACKED32(incident_activity, index.cell);
             } else if(index_type == EXTERNAL_OUTPUT_INDEX_TYPE) {
                 external_output_index index = seg_data.index.external_output;
-                is_cell_active = GET_BIT_FROM_PACKED32(incident_activity, index.cell);
+                u32* lm_output = LMATP(*optional_external_incident_activity, index.lm_id, 0);
+                is_cell_active = GET_BIT_FROM_PACKED32(
+                    lm_output, 
+                    index.cell
+                );
             } else if(index_type == FEATURE_INDEX_TYPE) {
                 feature_index index = seg_data.index.feature;
                 is_cell_active = GET_BIT(incident_activity[index.col], index.cell);
@@ -34,11 +38,13 @@ void htm_prediction_integrate_context(
         }
 
         if(cell_accumulator > 255) cell_accumulator = 255;
-        context_pointer->connection_count = cell_accumulator;
+        **spike_count_pointer = cell_accumulator;
 
-        if(cell_accumulator > segment_spiking_threshold) *num_spiking_segments += 1;
+        if(cell_accumulator > segment_spiking_threshold) 
+            *output_num_spiking_segments += 1;
 
-        context_pointer += 1;
+        *context_pointer += 1;
+        *spike_count_pointer += 1;
     }
 }
 
@@ -65,30 +71,41 @@ void htm_activate(
 }
 
 void htm_learning_pick_winner_cell(
-    u32* winning_cell, u32* winning_connection_count, 
-    segment_t* context_pointer, 
+    u32* winning_cell, u32* winning_spike_count, 
+    u8* spike_count_pointer, 
     u32 segments, u32 cells
 ) {
     for(u32 cell = 0; cell < cells; ++cell) {
         for(u32 seg = 0; seg < segments; ++seg) {
-            if(context_pointer->connection_count > *winning_connection_count) {
+            if(*spike_count_pointer > *winning_spike_count) {
                 *winning_cell = cell;
-                *winning_connection_count = context_pointer->connection_count ;
+                *winning_spike_count = *spike_count_pointer;
             }
 
-            context_pointer += 1;
+            spike_count_pointer += 1;
         }
     }
 }
 
 void htm_learning_adjust_permanences(
-    u32* incident_activity_prev, segment_t* context_pointer,
-    u32 winning_cell, u32 winning_connection_count,
-    u32 active_bitarray, u32 pred_bitarray,
+    u32 cell, 
+    segment_t** context_pointer, u8** spike_count_pointer,
+    u32* incident_activity, lmat_u32* optional_external_incident_activity,
+    u32 cell_is_active, u32 cell_is_predicted,
+    u32 col_active_and_unpredicted, u32 winning_cell,
     enum segment_index_type index_type, u8 num_segments,
-    htm_params_t htm_p, u32 cell
-) {
-    u32 cell_is_predicted = GET_BIT(pred_bitarray, cell);
+    htm_params_t htm_p, u32 enable_decay
+) { 
+    u32 cell_will_not_reinforce = (!cell_is_active || !cell_is_predicted) 
+        && (!col_active_and_unpredicted || cell != winning_cell);
+    u32 cell_will_not_decay = !enable_decay || !cell_is_predicted || cell_is_active;
+
+    if(cell_will_not_reinforce && cell_will_not_decay) {
+        *context_pointer += num_segments;
+        *spike_count_pointer += num_segments;
+
+        return;
+    }
 
     for(u32 seg = 0; seg < num_segments; ++seg) {
         /** There are two cases for a reinforcement:
@@ -100,28 +117,38 @@ void htm_learning_adjust_permanences(
          * 2. If the column is active, no cell in the col is predicted and this cell is the winning cell (chosen prior)
          *      we 
          */
-        u32 seg_was_spiking = context_pointer->connection_count >= htm_p.segment_spiking_threshold;
+        u32 seg_was_spiking = **spike_count_pointer >= htm_p.segment_spiking_threshold;
 
-        u32 should_reinforce_case1 = active_bitarray != 0 && cell_is_predicted 
+        u32 should_reinforce_case1 = cell_is_active 
+            && cell_is_predicted 
             && seg_was_spiking;
-        u32 should_reinforce_case2 = active_bitarray != 0 && pred_bitarray == 0 
-            && cell == winning_cell 
-            && context_pointer->connection_count == winning_connection_count;
+        u32 should_reinforce_case2 = col_active_and_unpredicted
+            && cell == winning_cell;
 
-        u32 should_reinforce = should_reinforce_case1 && should_reinforce_case2;
+        u32 should_reinforce = should_reinforce_case1 || should_reinforce_case2;
         
         if(should_reinforce) {
-            for(u32 conn = 0; conn < context_pointer->num_connections; ++conn) {
-                segment_data* seg_data = &(context_pointer->connections[conn]);
+            for(u32 conn = 0; conn < (*context_pointer)->num_connections; ++conn) {
+                segment_data* seg_data = &((*context_pointer)->connections[conn]);
 
                 // if we don't know how to handle the incident cell index, we default to not handling anything
                 u32 incident_cell_was_active = 0; 
                 if(index_type == FEATURE_INDEX_TYPE) {
                     feature_index index = seg_data->index.feature;
-                    incident_cell_was_active = GET_BIT(incident_activity_prev[index.col], index.cell);
+                    incident_cell_was_active = GET_BIT(incident_activity[index.col], index.cell);
                 } else if(index_type == LOCATION_INDEX_TYPE) {
                     location_index index = seg_data->index.location;
-                    incident_cell_was_active = GET_BIT(incident_activity_prev[index.col], index.cell);
+                    incident_cell_was_active = GET_BIT(incident_activity[index.col], index.cell);
+                } else if(index_type == INTERNAL_OUTPUT_INDEX_TYPE) {
+                    internal_output_index index = seg_data->index.internal_output;
+                    incident_cell_was_active = GET_BIT_FROM_PACKED32(incident_activity, index.cell);
+                } else if(index_type == EXTERNAL_OUTPUT_INDEX_TYPE) {
+                    external_output_index index = seg_data->index.external_output;
+                    u32* lm_output = LMATP(*optional_external_incident_activity, index.lm_id, 0);
+                    incident_cell_was_active = GET_BIT_FROM_PACKED32(
+                        lm_output, 
+                        index.cell
+                    );
                 }
                 
                 // we don't care if the cell was connected (perm > thresh), we just reward active and
@@ -139,22 +166,22 @@ void htm_learning_adjust_permanences(
                 }
             }
         } 
-        
+
         // If the cell was predicted but ended up not become active, apply a decay to
         // synapses above perm thresh and connected to an active cell
-        u32 should_decay = active_bitarray == 0 && cell_is_predicted && seg_was_spiking;
+        u32 should_decay = enable_decay && cell_is_predicted && !cell_is_active && seg_was_spiking;
         if(should_decay) {
-            for(u32 conn = 0; conn < context_pointer->num_connections; ++conn) {
-                segment_data* seg_data = &(context_pointer->connections[conn]);
+            for(u32 conn = 0; conn < (*context_pointer)->num_connections; ++conn) {
+                segment_data* seg_data = &((*context_pointer)->connections[conn]);
 
                 // if we don't know how to handle the incident cell index, we default to not handling anything
                 u32 incident_cell_was_active = 0; 
                 if(index_type == FEATURE_INDEX_TYPE) {
                     feature_index index = seg_data->index.feature;
-                    incident_cell_was_active = GET_BIT(incident_activity_prev[index.col], index.cell);
+                    incident_cell_was_active = GET_BIT(incident_activity[index.col], index.cell);
                 } else if(index_type == LOCATION_INDEX_TYPE) {
                     location_index index = seg_data->index.location;
-                    incident_cell_was_active = GET_BIT(incident_activity_prev[index.col], index.cell);
+                    incident_cell_was_active = GET_BIT(incident_activity[index.col], index.cell);
                 }
 
                 if(incident_cell_was_active && seg_data->permanence >= htm_p.permanence_threshold) {
@@ -166,6 +193,51 @@ void htm_learning_adjust_permanences(
             }
         }
 
+        *context_pointer += 1;
+        *spike_count_pointer += 1;
+    }
+}
+
+u32 htm_connections_check(
+    segment_t* context_pointer, 
+    enum segment_index_type index_type, u8 num_segments,
+    u32 connections_min, u32 connections_max,
+    u32 col_max, u32 cell_max,
+    u32 lm_max
+) {
+    for(u32 seg = 0; seg < num_segments; ++seg) {
+
+        if(context_pointer->num_connections < connections_min 
+            || context_pointer->num_connections > connections_max
+        ) { return 0; }
+
+        for(u32 conn = 0; conn < (context_pointer)->num_connections; ++conn) {
+            segment_data seg_data = (context_pointer)->connections[conn];
+
+            if(index_type == FEATURE_INDEX_TYPE) {
+                feature_index index = seg_data.index.feature;
+
+                if(index.col > col_max) return 0;
+                if(index.cell > cell_max) return 0;
+            } else if(index_type == LOCATION_INDEX_TYPE) {
+                location_index index = seg_data.index.location;
+
+                if(index.col > col_max) return 0;
+                if(index.cell > cell_max) return 0;
+            } else if(index_type == INTERNAL_OUTPUT_INDEX_TYPE) {
+                internal_output_index index = seg_data.index.internal_output;
+
+                if(index.cell > cell_max) return 0;
+            } else if(index_type == EXTERNAL_OUTPUT_INDEX_TYPE) {
+                external_output_index index = seg_data.index.external_output;
+
+                if(index.cell > cell_max) return 0;
+                if(index.lm_id > lm_max) return 0;
+            }
+            
+        }
         context_pointer += 1;
     }
+
+    return 1;
 }

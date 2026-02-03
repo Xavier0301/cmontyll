@@ -2,34 +2,58 @@
 
 /************* UNIFORM ***********/
 // return a random number between 0 and max inclusive.
-u32 unif_rand_u32(u32 max) {
-    u32 divisor = RAND_MAX / (max + 1);
-    u32 retval;
+// u32 unif_rand_u32(u32 max, u32* seed) {
+//     if (max > RAND_MAX) max = RAND_MAX; 
+//     if (max == 0) return 0;
 
-    do { 
-        retval = rand() / divisor;
-    } while (retval > max);
+//     u32 range = max + 1;
 
-    return retval;
+//     u32 remainder = RAND_MAX % range;
+//     u32 bucket_limit = RAND_MAX - remainder;
+
+//     u32 r;
+//     do {
+//         r = (u32)rand_r(seed);
+//     } while (r > bucket_limit);
+
+//     return r % range;
+// }
+
+u32 unif_rand_u32(u32 max, u32* seed) {
+    if (max == 0xFFFFFFFF) {
+        return (u32) rand_r(seed);
+    }
+
+    // The simple modulo logic
+    return ((u32) rand_r(seed)) % (max + 1);
 }
 
-u32 unif_rand_range_u32(u32 min, u32 max) {
-    return unif_rand_u32(max - min) + min;
+u32 unif_rand_range_u32(u32 min, u32 max, u32* seed) {
+    return unif_rand_u32(max - min, seed) + min;
 }
 
 
-f32 unif_rand_f32(f32 max) {
-    return max * ((f32) rand()) / ((f32) RAND_MAX);
+f32 unif_rand_f32(f32 max, u32* seed) {
+    return max * ((f32) rand_r(seed)) / ((f32) RAND_MAX);
 }
 
-f32 unif_rand_range_f32(f32 min, f32 max) {
-    return unif_rand_f32(max - min) + min;
+f32 unif_rand_range_f32(f32 min, f32 max, u32* seed) {
+    return unif_rand_f32(max - min, seed) + min;
+}
+
+u32 unif_rand_range_u32_except(u32 min, u32 max, u32 except, u32* seed) {
+    u32 pick;
+    do {
+        pick = unif_rand_range_u32(min, max, seed);
+    } while(pick == except);
+
+    return pick;
 }
 
 #define SHUFFLE_ARRAY_IMPLEMENTATION(symbol) \
-    void shuffle_array_##symbol(symbol* array, u32 length) { \
+    void shuffle_array_##symbol(symbol* array, u32 length, u32* seed) { \
         for(u32 i = length - 1; i >= 1; --i) { \
-            u32 j = unif_rand_u32(i); \
+            u32 j = unif_rand_u32(i, seed); \
             swap_##symbol(array + i, array + j); \
         } \
     }
@@ -40,15 +64,15 @@ SHUFFLE_ARRAY_IMPLEMENTATION(u8)
 
 /************* GAUSSIAN ***********/
 // From TAOCP Knuth
-double gauss_rand() {
+double gauss_rand(u32* seed) {
     static double V1, V2, S;
     static int phase = 0;
     double X;
 
     if(phase == 0) {
         do {
-            double U1 = (double) rand() / RAND_MAX;
-            double U2 = (double) rand() / RAND_MAX;
+            double U1 = (double) rand_r(seed) / RAND_MAX;
+            double U2 = (double) rand_r(seed) / RAND_MAX;
 
             V1 = 2 * U1 - 1;
             V2 = 2 * U2 - 1;

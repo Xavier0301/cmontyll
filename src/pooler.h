@@ -53,7 +53,7 @@ typedef struct pooler_t_ {
         // 2. If x > alpha then it comes in a negative number which absolute value represents the amount to be shifted left (because our arch does not support 8-bit divs)
 } pooler_t;
 
-void init_pooler(pooler_t* p, u32 num_inputs, u32 num_minicols, f32 p_connected, u32 learning_enabled, u32 boosting_enabled);
+void init_pooler(pooler_t* p, u32 num_inputs, u32 num_minicols, f32 p_connected, u32 learning_enabled, u32 boosting_enabled, u32* seed);
 
 void print_pooler(pooler_t* p);
 

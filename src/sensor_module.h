@@ -31,7 +31,7 @@ typedef struct grid_sm_ {
     pooler_t pooler;
 } grid_sm;
 
-void init_sensor_module(grid_sm* sm, u32 env_min_value, u32 env_max_value, u32 num_columns);
+void init_sensor_module(grid_sm* sm, u32 env_min_value, u32 env_max_value, u32 num_columns, u32* seed);
 
 void sensor_module(grid_sm sm, features_t* features, grid_t patch, uvec2d patch_center);
 

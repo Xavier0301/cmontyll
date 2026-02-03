@@ -27,7 +27,7 @@ typedef struct grid_t_ {
 } grid_t;
 
 void init_grid_env(grid_t* env, u32 rows, u32 cols);
-void populate_grid_env_random(grid_t* env);
+void populate_grid_env_random(grid_t* env, u32* seed);
 
 bounds_t get_bounds(u32 env_size_x, u32 env_size_y, u32 patch_size_x, u32 patch_size_y);
 

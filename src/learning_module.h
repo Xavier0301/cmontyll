@@ -30,9 +30,15 @@ void init_learning_module(
     learning_module* lm, 
     output_layer_params_t l3_params,
     feature_layer_params_t l4_params,
-    location_layer_params_t l6_params
+    location_layer_params_t l6_params,
+    u32* seed
 );
 
-void learning_module_step(learning_module* lm, features_t features, vec2d movement);
+void learning_module_step(
+    learning_module* lm,
+    features_t features,
+    vec2d movement,
+    lmat_u32* external_output_layer_activations
+);
 
 #endif

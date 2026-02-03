@@ -4,7 +4,7 @@
 
 #include "encoder.h"
 
-void init_sensor_module(grid_sm* sm, u32 env_min_value, u32 env_max_value, u32 num_columns) {
+void init_sensor_module(grid_sm* sm, u32 env_min_value, u32 env_max_value, u32 num_columns, u32* seed) {
     sm->p.env_min_value = env_min_value;
     sm->p.env_max_value = env_max_value;
 
@@ -17,7 +17,8 @@ void init_sensor_module(grid_sm* sm, u32 env_min_value, u32 env_max_value, u32 n
         &sm->pooler, 
         sm->p.encoding_length, 
         num_columns,
-        1.0, 1, 1
+        1.0, 1, 1,
+        seed
     );
 }
 
@@ -233,6 +234,7 @@ void get_principal_curvatures_u8(i32* k1_fp, i32* k2_fp, vec3d* dir1, vec3d* dir
 }
 
 void print_features(features_int_repr_t f) {
+#if PRINT == 2
     printf("features: value=%u min_depth=%u max_depth=%u mean_depth=%u principal_curvature_1=%d(%d) principal_curvature_2=%d(%d) pose_fully_defined=%d\n",
         f.value,
         f.min_depth,
@@ -242,9 +244,13 @@ void print_features(features_int_repr_t f) {
         f.principal_curvature_2_fp >> CURVATURE_FRACTIONAL_BITS, f.principal_curvature_2_fp,
         f.pose_fully_defined
     );
+#else
+    (void) f;
+#endif
 }
 
 void print_pose(pose_3d_repr_t p) {
+#if PRINT == 2
     printf("pose:\n");
     printf("  point_normal: x=%d y=%d z=%d\n",
         (int)p.point_normal.x, (int)p.point_normal.y, (int)p.point_normal.z);
@@ -253,4 +259,7 @@ void print_pose(pose_3d_repr_t p) {
     printf("  curvature_direction_2: x=%d y=%d z=%d\n",
         (int)p.curvature_direction_2.x, (int)p.curvature_direction_2.y, (int)p.curvature_direction_2.z);
     printf("  pose_fully_defined: %d\n", p.pose_fully_defined);
+#else
+    (void) p;
+#endif
 }

@@ -11,11 +11,11 @@ void init_grid_env(grid_t* env, u32 rows, u32 cols) {
     env->cols = cols;
 }
 
-void populate_grid_env_random(grid_t* env) {
+void populate_grid_env_random(grid_t* env, u32* seed) {
     for(u32 i = 0; i < env->rows; ++i) {
         for(u32 j = 0; j < env->rows; ++j) {
-            MAT(env->depths, i, j) = unif_rand_range_u32(GRID_ENV_MIN_DEPTH, GRID_ENV_MAX_DEPTH);
-            MAT(env->values, i, j) = unif_rand_range_u32(GRID_ENV_MIN_VALUE, GRID_ENV_MAX_VALUE);
+            MAT(env->depths, i, j) = unif_rand_range_u32(GRID_ENV_MIN_DEPTH, GRID_ENV_MAX_DEPTH, seed);
+            MAT(env->values, i, j) = unif_rand_range_u32(GRID_ENV_MIN_VALUE, GRID_ENV_MAX_VALUE, seed);
         }
     }
 }
@@ -58,8 +58,12 @@ void extract_patch(grid_t* patch, grid_t* env, uvec2d location, u32 patch_sidele
 
 
 void print_grid(grid_t* env) {
+#if PRINT == 2
     printf("depths:\n");
     MATRIX_PRINT(&env->depths, env->rows, env->cols);
     printf("values:\n");
     MATRIX_PRINT(&env->values, env->rows, env->cols);
+#else
+    (void) env;
+#endif
 }

@@ -18,38 +18,28 @@ typedef uint64_t u64;
 typedef float f32;
 typedef double f64;
 
-#define PAIR_TYPE_(symbol) pair_##symbol##_
-#define PAIR_TYPE(symbol) pair_##symbol
+typedef struct vec2d_ {
+    i32 x;
+    i32 y;
+} vec2d;
 
-#define DEFINE_PAIR_STRUCT(symbol) \
-    typedef struct PAIR_TYPE_(symbol) { \
-        symbol first; \
-        symbol second; \
-    } PAIR_TYPE(symbol)
+typedef struct uvec2d_ {
+    u32 x;
+    u32 y;
+} uvec2d;
 
-DEFINE_PAIR_STRUCT(u8);
-DEFINE_PAIR_STRUCT(u16);
-DEFINE_PAIR_STRUCT(u32);
-
-#define INDEX2D_TYPE_(symbol) index2d_##symbol##_
-#define INDEX2D_TYPE(symbol) index2d_##symbol
-
-#define DEFINE_INDEX2D_STRUCT(symbol) \
-    typedef struct INDEX2D_TYPE_(symbol) { \
-        symbol x; \
-        symbol y; \
-    } INDEX2D_TYPE(symbol)
-
-DEFINE_INDEX2D_STRUCT(u8);
-DEFINE_INDEX2D_STRUCT(u16);
-DEFINE_INDEX2D_STRUCT(u32);
+inline static int is_vec2d_positive(vec2d v) {
+    return v.x >= 0 && v.y >= 0;
+}
 
 static inline u8 safe_add_u8(u8 a, u8 b) {
-    return (255 - a < b) ? 255 : a + b;
+    if(255 - a < b) return 255;
+    else return a + b;
 }
 
 static inline u8 safe_sub_u8(u8 a, u8 b) {
-    return (a < b) ? 0 : a - b;
+    if(a < b) return 0;
+    else return a - b;
 }
 
 #endif // TYPES_H

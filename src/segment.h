@@ -21,7 +21,7 @@ typedef struct __attribute__((packed)) internal_output_index_ {
 // u24
 typedef struct __attribute__((packed)) external_output_index_ {
     u16 cell;
-    u8 learning_module_id;
+    u8 lm_id; // learning module id
 } external_output_index;
 
 // ----- FEATURE LAYER -----
@@ -64,10 +64,10 @@ typedef struct __attribute__((packed)) segment_data_ {
 
 #define CONNECTIONS_PER_SEGMENT 40
 
-typedef struct segment_t_ {
+typedef struct __attribute__((aligned(8))) segment_t_ {
     segment_data connections[CONNECTIONS_PER_SEGMENT]; // each connections takes 4 bytes, we "cast" it to the proper x_segment_data in the code
     u8 num_connections;
-    u8 connection_count; // used for learning, to know which segment was spiking
+    // u8 connection_count; // used for learning, to know which segment was spiking
 } segment_t;
 
 #endif

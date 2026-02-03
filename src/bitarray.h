@@ -9,9 +9,9 @@
 
 #include "types.h"
 
-#define BIT_MASK(i) (1 << i)
+#define BIT_MASK(i) (1U << i)
 
-#define GET_BIT(x, i) ((x & BIT_MASK(i)) >> i)
+#define GET_BIT(x, i) ((x >> i) & 1)
 
 // --- Packed bitarray
 
@@ -19,8 +19,11 @@
  * @brief For a packed array of form u32* elements
  * we gotta leave 32 = 2^5 bits of adressing for the bitarray 
  * Meaning if u32 index is our address, we do:
- *      bitarray = elements[index >> 5] 
- *      bit = GET_BIT(bitarray, index & 0b11111)
+ *      word_index = index >> 5
+ *      bit_index = index & 0b11111
+ *      
+ *      bit = GET_BIT(packed[word_index], bit_index)
+ *      
  * 
  * To set a bit, it is:
  *      elements[index >> 5] |= (1 << (index & 0b11111))

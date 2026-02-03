@@ -13,7 +13,7 @@
  */
 
 // For now, there is global input connectivity. If topology is on, change that shit.
-void init_connections(pooler_t* p, u32 num_inputs, u32 num_minicols, f32 p_connected) {
+void init_connections(pooler_t* p, u32 num_inputs, u32 num_minicols, f32 p_connected, u32* seed) {
     // to how many inputs could each minicolumn be connected?
     u32 num_inputs_connected = (u32) (p_connected * (f32) num_inputs);
 
@@ -21,9 +21,9 @@ void init_connections(pooler_t* p, u32 num_inputs, u32 num_minicols, f32 p_conne
 
     for(u32 col = 0; col < num_minicols; ++col) {
         for(u32 input = 0; input < num_inputs; ++input) {
-            u8 potential_connection = (u8) unif_rand_range_u32(0, 255);
+            u8 potential_connection = (u8) unif_rand_range_u32(0, 255, seed);
             if(potential_connection >= num_inputs_connected) 
-                MAT(p->synaptic_permanences, col, input) = (u8) unif_rand_range_u32(0, 255);
+                MAT(p->synaptic_permanences, col, input) = (u8) unif_rand_range_u32(0, 255, seed);
             else
                 MAT(p->synaptic_permanences, col, input) = 0;
         }
@@ -60,7 +60,7 @@ void init_boosting_LUT(pooler_t* p) {
     // Let's calculate the range of inputs for which this function is > 1/128. Lower values we don't care about.
     f32 thresh = 1.0/128.0;
     u32 length = 0;
-    for(u8 x = 0; x < 255 && length == 0; ++x) {
+    for(u8 x = 0; x <= 255 && length == 0; ++x) {
         f32 res = exp(- beta * (x - s));
 
         if(res <= thresh) {
@@ -68,6 +68,7 @@ void init_boosting_LUT(pooler_t* p) {
             break;
         }
     }
+    if(length == 0) length = 255;
 
     // Knowing the number of values we will use, we can finally instantiate our LUT
     lut_i8_init(&p->boosting_LUT, 0, length);
@@ -107,16 +108,17 @@ void init_params(pooler_t* p, u32 num_inputs, u32 num_minicols, u32 learning_ena
     p->params.boosting_strength = 100.0f; // beta
 }
 
-void init_pooler(pooler_t* p, u32 num_inputs, u32 num_minicols, f32 p_connected, u32 learning_enabled, u32 boosting_enabled) {
+void init_pooler(pooler_t* p, u32 num_inputs, u32 num_minicols, f32 p_connected, u32 learning_enabled, u32 boosting_enabled, u32* seed) {
     init_params(p, num_inputs, num_minicols, learning_enabled, boosting_enabled);
 
-    init_connections(p, num_inputs, num_minicols, p_connected);
+    init_connections(p, num_inputs, num_minicols, p_connected, seed);
     init_columns(p, num_minicols);
     if(p->params.boosting_enabled) init_boosting_LUT(p);
     else p->boosting_LUT.length = 0;
 }
 
 void print_pooler(pooler_t* p) {
+#if PRINT == 2
     printf("=== pooler ===\n");
     printf("params\n");
     printf("\tlearning = %u  boosting = %u\n", 
@@ -143,6 +145,9 @@ void print_pooler(pooler_t* p) {
             printf("%u -> %d, ", x, p->boosting_LUT.data[x]);
     }
     printf("\n");
+#else
+    (void) p;
+#endif
 }
 
 u16 calculate_next_time_averaged_acts(u16 last_time_avgs_acts, u32 col_is_activated, u32 log2_activation_window) {
