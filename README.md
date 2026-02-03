@@ -2,7 +2,7 @@
 
 ![montyll architecture](montyll_arch_full.jpg "Montyll Architecture")
 
-<ins>Montyll</ins> stands for <ins>Monty</ins> <ins>l</ins>ow-<ins>l</ins>evel, as it is inspired from N. Leadholm, V. Clay et al.'s implementation named _Monty_ ([code](https://github.com/thousandbrainsproject/tbp.monty), [paper](https://arxiv.org/abs/2507.04494)), but integrates elements of low-level neocortical processing e.g. accurate neuron models [^1][^2] and grid cells to represent location [^3][^4]. Montyll was explicitly designed to be aligned with the long term goals of the Thousand Brains Project ([website](https://thousandbrains.org), [paper](https://arxiv.org/abs/2412.18354)). It is written in C for performance and to be amenable to architectural studies.
+<ins>Montyll</ins> stands for <ins>Monty</ins> <ins>l</ins>ow-<ins>l</ins>evel, as it is inspired by N. Leadholm, V. Clay et al.'s implementation named _Monty_ ([code](https://github.com/thousandbrainsproject/tbp.monty), [paper](https://arxiv.org/abs/2507.04494)), but integrates elements of low-level neocortical processing e.g. accurate neuron models [^1][^2] and grid cells to represent location [^3][^4]. Montyll was explicitly designed to be aligned with the long term goals of the Thousand Brains Project ([website](https://thousandbrains.org), [paper](https://arxiv.org/abs/2412.18354)). It is written in C for performance and to be amenable to architectural studies.
 
 ## Getting started
 
