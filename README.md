@@ -17,6 +17,14 @@ To run Montyll for 100 steps:
 ./main 100
 ```
 
+### Printing stuff
+
+To enable printing the states and other useful informations, use `PRINT=0` (none), `PRINT=1` (standard) or `PRINT=2` (verbose) at compile time:
+```
+PRINT=2 make main
+./main 10
+```
+
 ### Multiple learning modules mode
 
 For many learning modules:
@@ -34,14 +42,6 @@ GCC_BIN=/path/to/gcc
 OMP_NUM_THREADS=50 ./scale-out-gcc 100
 ```
 although the performance is not great since `sys` time explodes around 250 learning modules.
-
-### Printing stuff
-
-To enable printing the states and other useful informations, use `PRINT=0` (none), `PRINT=1` (standard) or `PRINT=2` (verbose) at compile time:
-```
-PRINT=2 make main
-./main 10
-```
 
 [^1]: J. Hawkins and S. Ahmad, “Why neurons have thousands of synapses, a theory of sequence memory in neocortex,” Frontiers in neural circuits, vol. 10, p. 23, 2016
 
