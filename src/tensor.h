@@ -1,5 +1,5 @@
-#ifndef TENSOR_H
-#define TENSOR_H
+#ifndef TNSR_H
+#define TNSR_H
 
 #include <stdint.h>
 #include <stdlib.h>
@@ -9,10 +9,9 @@
 
 #include "types.h"
 
-#define DATA_TYPE(symbol) symbol
 
-#define TENSOR_TYPE_(symbol) tensor_##symbol##_
-#define TENSOR_TYPE(symbol) tensor_##symbol
+#define TENSOR_TYPE_(symbol) tnsr_##symbol##_
+#define TENSOR_TYPE(symbol) tnsr_##symbol
 
 // stride2 = shape3
 #define DEFINE_TENSOR_STRUCT(symbol) \
@@ -21,24 +20,32 @@
         u32 shape1; \
         u32 shape2; \
         u32 shape3; \
-        DATA_TYPE(symbol)* data; \
+        symbol* data; \
     } TENSOR_TYPE(symbol)
 
 DEFINE_TENSOR_STRUCT(u32);
 DEFINE_TENSOR_STRUCT(u16);
 DEFINE_TENSOR_STRUCT(u8);
 
-#define TENSOR3D_AXIS1(t, i) ((t).data + i * (t).stride1)
-#define TENSOR3D_AXIS2(t, i, j) (TENSOR3D_AXIS1(t, i) + j * (t).shape3)
-#define TENSOR3D(t, i, j, k) (TENSOR3D_AXIS2(t, i, j) + k)
+#define DEFINE_TENSOR_STRUCT_WNAME(symbol, name) \
+    typedef struct name##_ { \
+        u32 stride1; \
+        u32 shape1; \
+        u32 shape2; \
+        u32 shape3; \
+        symbol* data; \
+    } name
 
-#define TENSOR_INIT(t, shape1, shape2, shape3, type) \
+#define TNSR(t, i, j, k) ((t).data[(i) * (t).stride1 + (j) * (t).shape3 + (k)])
+#define TNSR_P(t, i, j, k) ((t).data + (i) * (t).stride1 + (j) * (t).shape3 + (k))
+
+#define TENSOR_INIT(t, shape1_, shape2_, shape3_, type) \
     do { \
-        t->stride1 = shape2 * shape3; \
-        t->shape1 = shape1; \
-        t->shape2 = shape2; \
-        t->shape3 = shape3; \
-        t->data = (type*) calloc(shape1 * shape2 * shape3, sizeof(*t->data)); \
+        (t)->stride1 = shape2_ * shape3_; \
+        (t)->shape1 = shape1_; \
+        (t)->shape2 = shape2_; \
+        (t)->shape3 = shape3_; \
+        (t)->data = (type*) malloc((shape1_) * (shape2_) * (shape3_) * sizeof(*(t)->data)); \
     } while(0)
 
 #define BUFFER_TO_TENSOR(type, buffer, shape1, shape2, shape3) \
@@ -72,62 +79,11 @@ DEFINE_TENSOR_STRUCT(u8);
     } while(0)
 
 #define DEFINE_TENSOR_INIT(symbol) \
-    void tensor_##symbol##_init(TENSOR_TYPE(symbol)* t, u32 shape1, u32 shape2, u32 shape3);
+    void tnsr_##symbol##_init(TENSOR_TYPE(symbol)* t, u32 shape1, u32 shape2, u32 shape3);
 
 DEFINE_TENSOR_INIT(u32);
 DEFINE_TENSOR_INIT(u16);
 DEFINE_TENSOR_INIT(u8);
 
-#define MAT_TYPE_(symbol) mat_##symbol##_
-#define MAT_TYPE(symbol) mat_##symbol
-
-// cols = stride
-#define DEFINE_MATRIX_STRUCT(symbol) \
-    typedef struct MAT_TYPE_(symbol) { \
-        u32 rows; \
-        u32 cols; \
-        DATA_TYPE(symbol)* data; \
-    } MAT_TYPE(symbol)
-
-DEFINE_MATRIX_STRUCT(u32);
-DEFINE_MATRIX_STRUCT(u16);
-DEFINE_MATRIX_STRUCT(u8);
-
-#define DEFINE_MATRIX_STRUCT_WNAME(symbol, name) \
-    typedef struct name##_ { \
-        u32 rows; \
-        u32 cols; \
-        DATA_TYPE(symbol)* data; \
-    } name
-
-#define MAT(t, i, j) ((t).data[((i) * (t).cols) + (j)])
-#define MATP(t, i, j) ((t).data + ((i) * (t).cols) + (j))
-
-#define MATRIX_INIT(m, rows, cols, type) \
-    do { \
-        (m)->rows = rows; \
-        (m)->cols = cols; \
-        (m)->data = (type*) calloc(rows * cols, sizeof(*(m)->data)); \
-    } while(0)
-
-#define MATRIX_PRINT(m, rows, cols) \
-    do { \
-        for(size_t i = 0; i < rows; ++i) { \
-            for(size_t j = 0; j < cols; ++j) \
-                printf("%u ", MAT(*m, i, j)); \
-            printf("\n"); \
-        } \
-    } while(0)
-
-#define DEFINE_MATRIX_INIT(symbol) \
-    void matrix_##symbol##_init(MAT_TYPE(symbol)* m, u32 rows, u32 cols)
-
-DEFINE_MATRIX_INIT(u32);
-DEFINE_MATRIX_INIT(u16);
-DEFINE_MATRIX_INIT(u8);
-
-u8 mat_u8_min(mat_u8 m);
-u8 mat_u8_max(mat_u8 m);
-u8 mat_u8_mean(mat_u8 m); 
 
 #endif

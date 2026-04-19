@@ -8,7 +8,9 @@
 
 typedef struct htm_params_t_ {
     u8 permanence_threshold;
+
     u8 segment_spiking_threshold;
+    u8 predicted_threshold;
 
     u8 perm_increment;
     u8 perm_decrement;

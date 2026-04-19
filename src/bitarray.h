@@ -9,8 +9,6 @@
 
 #include "types.h"
 
-#define BIT_MASK(i) (1U << i)
-
 #define GET_BIT(x, i) ((x >> i) & 1)
 
 // --- Packed bitarray

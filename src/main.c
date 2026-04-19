@@ -151,7 +151,7 @@ int main(int argc, char *argv[]) {
         agent_location.x += movement.x;
         agent_location.y += movement.y;
 
-#if PRINT == 2
+#if PRINT == 2 
         printf("--- step %u: agent at location (%u, %u)\n", step, agent_location.x, agent_location.y);
 
         print_grid(&patch);
