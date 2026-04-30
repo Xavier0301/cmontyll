@@ -60,6 +60,26 @@ static inline u32 encode_active_cell(const layer_t* L, u32 col, u32 cell) {
     return (L->p.cells_per_col == 1) ? col : ((col << 5) | cell);
 }
 
+/* Effective cells-per-col of a stream's source layout (>= 1). */
+static inline u8 stream_eff_sccpc(const input_stream_t* s) {
+    return (s->source_cells_per_col <= 1) ? 1 : s->source_cells_per_col;
+}
+
+/* Encode (src_col, src_cell) of a stream into the bit-index used by
+ * stream.activity. */
+static inline u32 stream_bit_index(const input_stream_t* s,
+                                   u32 src_col, u32 src_cell) {
+    return (s->source_cells_per_col <= 1) ? src_col
+                                          : ((src_col << 5) | src_cell);
+}
+
+/* Compact bucket id of (src_col, src_cell) inside one stream. Total
+ * buckets per stream = source_cols * eff_sccpc. */
+static inline u32 stream_compact_id(const input_stream_t* s,
+                                    u32 src_col, u32 src_cell) {
+    return src_col * stream_eff_sccpc(s) + src_cell;
+}
+
 /* Stream id of the local segment slot `seg_in_cell` within a cell. */
 static u8 stream_for_local_segment(const layer_t* L, u32 seg_in_cell) {
     for (u8 s = 0; s < L->num_streams; ++s) {
@@ -157,7 +177,12 @@ void layer_init_connections(layer_t* L,
                             u32* seed) {
     assert(num_streams <= LAYER_MAX_STREAMS);
     L->num_streams = num_streams;
-    for (u8 s = 0; s < num_streams; ++s) L->streams[s] = streams[s];
+    for (u8 s = 0; s < num_streams; ++s) {
+        L->streams[s] = streams[s];
+        /* Derive source_cells from source_cols * eff_sccpc. */
+        u8 sccpc = stream_eff_sccpc(&L->streams[s]);
+        L->streams[s].source_cells = L->streams[s].source_cols * sccpc;
+    }
 
     /* ---- Validate streams; compute per-stream offsets ----
      * Distal: segments_assigned must sum to segments_per_cell.
@@ -165,8 +190,8 @@ void layer_init_connections(layer_t* L,
     u32 distal_segs_per_cell = 0;
     int proximal_id = -1;
     for (u8 s = 0; s < num_streams; ++s) {
-        if (streams[s].kind == STREAM_DISTAL) {
-            distal_segs_per_cell += streams[s].segments_assigned;
+        if (L->streams[s].kind == STREAM_DISTAL) {
+            distal_segs_per_cell += L->streams[s].segments_assigned;
         } else {
             assert(proximal_id < 0 && "v1: at most one proximal stream");
             proximal_id = s;
@@ -181,21 +206,21 @@ void layer_init_connections(layer_t* L,
         u32 acc = 0;
         for (u8 s = 0; s < num_streams; ++s) {
             L->stream_seg_offsets[s] = acc;
-            if (streams[s].kind == STREAM_DISTAL) {
-                acc += streams[s].segments_assigned;
+            if (L->streams[s].kind == STREAM_DISTAL) {
+                acc += L->streams[s].segments_assigned;
             }
         }
         L->stream_seg_offsets[num_streams] = acc;
     }
 
-    /* Per-stream source-cell offsets across all streams (used as CSR
-     * bucket id base for by_pre). */
+    /* Per-stream compact-source offsets (used as CSR bucket-id base for
+     * by_pre). Number of compact buckets per stream = source_cols * eff_sccpc. */
     {
         u32 acc = 0;
         for (u8 s = 0; s < num_streams; ++s) {
             L->stream_src_offsets[s] = acc;
-            if (streams[s].kind == STREAM_DISTAL) {
-                acc += streams[s].source_cells;
+            if (L->streams[s].kind == STREAM_DISTAL) {
+                acc += L->streams[s].source_cols * stream_eff_sccpc(&L->streams[s]);
             }
         }
         L->stream_src_offsets[num_streams] = acc;
@@ -220,18 +245,23 @@ void layer_init_connections(layer_t* L,
     }
 
     /* Draw distal connections. For each (col, cell, local_seg, k) pick a
-     * source cell from that local_seg's stream, randomize permanence. */
+     * source (src_col, src_cell) from that local_seg's stream,
+     * randomize permanence. Encoding the bit-index from (src_col, src_cell)
+     * guarantees we never land in the gap bits of a per-column source. */
     u32 ci = 0;
     for (u32 col = 0; col < L->p.cols; ++col) {
         for (u32 cell = 0; cell < L->p.cells_per_col; ++cell) {
             for (u32 seg = 0; seg < L->p.segments_per_cell; ++seg) {
                 u8 sid = stream_for_local_segment(L, seg);
                 const input_stream_t* str = &L->streams[sid];
+                u8 sccpc = stream_eff_sccpc(str);
                 u32 g = segment_global_index(L, col, cell, seg);
                 for (u32 k = 0; k < L->p.conns_per_segment; ++k) {
                     connection_t* c = &L->connections[ci++];
-                    c->source_index =
-                        unif_rand_range_u32(0, str->source_cells - 1, seed);
+                    u32 src_col  = unif_rand_range_u32(0, str->source_cols - 1, seed);
+                    u32 src_cell = (sccpc == 1) ? 0u
+                                                : unif_rand_range_u32(0, sccpc - 1, seed);
+                    c->source_index = stream_bit_index(str, src_col, src_cell);
                     c->segment_index = g;
                     c->permanence = (u8) unif_rand_range_u32(0, 255, seed);
                     c->stream_id = sid;
@@ -255,8 +285,10 @@ void layer_init_connections(layer_t* L,
     }
 
     /* ---- by_pre index ---- *
-     * Buckets indexed by (stream_id, source_cell) flattened via
-     * stream_src_offsets[s] + source_cell. */
+     * Buckets indexed by (stream_id, src_col, src_cell) -> compact id =
+     * stream_src_offsets[s] + src_col * eff_sccpc + src_cell. We recover
+     * the compact (col, cell) from connection.source_index (which is the
+     * activity bit-index). */
     u32 num_pre_buckets = L->stream_src_offsets[num_streams];
     L->by_pre_offset = (u32*) malloc((num_pre_buckets + 1) * sizeof(u32));
     L->by_pre_data   = (u32*) malloc(L->n_distal * sizeof(u32));
@@ -264,7 +296,17 @@ void layer_init_connections(layer_t* L,
         u32* keys = (u32*) malloc(L->n_distal * sizeof(u32));
         for (u32 i = 0; i < L->n_distal; ++i) {
             const connection_t* c = &L->connections[i];
-            keys[i] = L->stream_src_offsets[c->stream_id] + c->source_index;
+            const input_stream_t* str = &L->streams[c->stream_id];
+            u8 sccpc = stream_eff_sccpc(str);
+            u32 src_col, src_cell;
+            if (sccpc == 1) {
+                src_col = c->source_index; src_cell = 0;
+            } else {
+                src_col = c->source_index >> 5;
+                src_cell = c->source_index & 31u;
+            }
+            keys[i] = L->stream_src_offsets[c->stream_id]
+                    + stream_compact_id(str, src_col, src_cell);
         }
         csr_build(num_pre_buckets, L->n_distal, keys,
                   L->by_pre_offset, L->by_pre_data);
@@ -280,15 +322,19 @@ void layer_init_connections(layer_t* L,
 
         /* Each ffwd connection is stored with segment_index = target cell
          * global index (we treat the cell as a single virtual segment for
-         * indexing purposes; the by-cell index plays the role of by-seg). */
+         * indexing purposes; the by-cell index plays the role of by-seg).
+         * source_index encodes (src_col, src_cell) for the proximal stream. */
+        u8 prox_sccpc = stream_eff_sccpc(prox);
         u32 fci = 0;
         for (u32 col = 0; col < L->p.cols; ++col) {
             for (u32 cell = 0; cell < L->p.cells_per_col; ++cell) {
                 u32 cg = cell_global_index(L, col, cell);
                 for (u32 k = 0; k < L->p.ffwd_conns_per_cell; ++k) {
                     connection_t* c = &L->ffwd_connections[fci++];
-                    c->source_index =
-                        unif_rand_range_u32(0, prox->source_cells - 1, seed);
+                    u32 src_col  = unif_rand_range_u32(0, prox->source_cols - 1, seed);
+                    u32 src_cell = (prox_sccpc == 1) ? 0u
+                                                     : unif_rand_range_u32(0, prox_sccpc - 1, seed);
+                    c->source_index = stream_bit_index(prox, src_col, src_cell);
                     c->segment_index = cg;
                     c->permanence = (u8) unif_rand_range_u32(0, 255, seed);
                     c->stream_id = (u8) proximal_id;
@@ -311,16 +357,22 @@ void layer_init_connections(layer_t* L,
             free(keys);
         }
 
-        /* by_pre index for ffwd: buckets are source cells of the proximal
-         * stream. */
+        /* by_pre index for ffwd: buckets keyed by compact id over the
+         * proximal stream (src_col * eff_sccpc + src_cell). */
+        u32 prox_buckets = prox->source_cols * prox_sccpc;
         L->ffwd_by_pre_offset =
-            (u32*) malloc((prox->source_cells + 1) * sizeof(u32));
+            (u32*) malloc((prox_buckets + 1) * sizeof(u32));
         L->ffwd_by_pre_data = (u32*) malloc(L->n_ffwd * sizeof(u32));
         {
             u32* keys = (u32*) malloc(L->n_ffwd * sizeof(u32));
-            for (u32 i = 0; i < L->n_ffwd; ++i)
-                keys[i] = L->ffwd_connections[i].source_index;
-            csr_build(prox->source_cells, L->n_ffwd, keys,
+            for (u32 i = 0; i < L->n_ffwd; ++i) {
+                u32 si = L->ffwd_connections[i].source_index;
+                u32 src_col, src_cell;
+                if (prox_sccpc == 1) { src_col = si; src_cell = 0; }
+                else { src_col = si >> 5; src_cell = si & 31u; }
+                keys[i] = stream_compact_id(prox, src_col, src_cell);
+            }
+            csr_build(prox_buckets, L->n_ffwd, keys,
                       L->ffwd_by_pre_offset, L->ffwd_by_pre_data);
             free(keys);
         }
@@ -394,18 +446,42 @@ void layer_project(layer_t* L) {
         if (str->activity == NULL) continue;
 
         u32 base = L->stream_src_offsets[s];
-        u32 N = str->source_cells;
+        u8 sccpc = stream_eff_sccpc(str);
 
-        for (u32 src = 0; src < N; ++src) {
-            if (!layer_bit_get(str->activity, src)) continue;
-
-            u32 a = L->by_pre_offset[base + src];
-            u32 b = L->by_pre_offset[base + src + 1];
-            for (u32 k = a; k < b; ++k) {
-                const connection_t* c = &L->connections[L->by_pre_data[k]];
-                if (c->permanence < str->perm_threshold) continue;
-                u8* acc = &L->segment_accumulators.data[c->segment_index];
-                if (*acc < 255) ++(*acc);
+        if (sccpc == 1) {
+            /* flat source: bit-index == compact id == src_col */
+            for (u32 src = 0; src < str->source_cols; ++src) {
+                if (!layer_bit_get(str->activity, src)) continue;
+                u32 a = L->by_pre_offset[base + src];
+                u32 b = L->by_pre_offset[base + src + 1];
+                for (u32 k = a; k < b; ++k) {
+                    const connection_t* c = &L->connections[L->by_pre_data[k]];
+                    if (c->permanence < str->perm_threshold) continue;
+                    u8* acc = &L->segment_accumulators.data[c->segment_index];
+                    if (*acc < 255) ++(*acc);
+                }
+            }
+        } else {
+            /* per-column source: walk one word at a time, bit-extract
+             * cells that fit in the layer's cells-per-col. */
+            for (u32 src_col = 0; src_col < str->source_cols; ++src_col) {
+                u32 word = str->activity[src_col];
+                if (!word) continue;
+                u32 limit = (sccpc >= 32) ? 0xFFFFFFFFu : ((1u << sccpc) - 1u);
+                u32 w = word & limit;
+                while (w) {
+                    u32 src_cell = __builtin_ctz(w);
+                    w &= w - 1u;
+                    u32 compact = src_col * sccpc + src_cell;
+                    u32 a = L->by_pre_offset[base + compact];
+                    u32 b = L->by_pre_offset[base + compact + 1];
+                    for (u32 k = a; k < b; ++k) {
+                        const connection_t* c = &L->connections[L->by_pre_data[k]];
+                        if (c->permanence < str->perm_threshold) continue;
+                        u8* acc = &L->segment_accumulators.data[c->segment_index];
+                        if (*acc < 255) ++(*acc);
+                    }
+                }
             }
         }
     }
@@ -474,16 +550,39 @@ static void compute_ffwd_overlap_sparse(layer_t* L) {
 
     const input_stream_t* prox = &L->streams[L->proximal_stream_id];
     if (prox->activity == NULL) return;
+    u8 sccpc = stream_eff_sccpc(prox);
 
-    for (u32 src = 0; src < prox->source_cells; ++src) {
-        if (!layer_bit_get(prox->activity, src)) continue;
-        u32 a = L->ffwd_by_pre_offset[src];
-        u32 b = L->ffwd_by_pre_offset[src + 1];
-        for (u32 k = a; k < b; ++k) {
-            const connection_t* c = &L->ffwd_connections[L->ffwd_by_pre_data[k]];
-            if (c->permanence < prox->perm_threshold) continue;
-            u8* o = &L->ffwd_overlap[c->segment_index];  /* segment_index == cell_global_index */
-            if (*o < 255) ++(*o);
+    if (sccpc == 1) {
+        for (u32 src = 0; src < prox->source_cols; ++src) {
+            if (!layer_bit_get(prox->activity, src)) continue;
+            u32 a = L->ffwd_by_pre_offset[src];
+            u32 b = L->ffwd_by_pre_offset[src + 1];
+            for (u32 k = a; k < b; ++k) {
+                const connection_t* c = &L->ffwd_connections[L->ffwd_by_pre_data[k]];
+                if (c->permanence < prox->perm_threshold) continue;
+                u8* o = &L->ffwd_overlap[c->segment_index];
+                if (*o < 255) ++(*o);
+            }
+        }
+    } else {
+        for (u32 src_col = 0; src_col < prox->source_cols; ++src_col) {
+            u32 word = prox->activity[src_col];
+            if (!word) continue;
+            u32 limit = (sccpc >= 32) ? 0xFFFFFFFFu : ((1u << sccpc) - 1u);
+            u32 w = word & limit;
+            while (w) {
+                u32 src_cell = __builtin_ctz(w);
+                w &= w - 1u;
+                u32 compact = src_col * sccpc + src_cell;
+                u32 a = L->ffwd_by_pre_offset[compact];
+                u32 b = L->ffwd_by_pre_offset[compact + 1];
+                for (u32 k = a; k < b; ++k) {
+                    const connection_t* c = &L->ffwd_connections[L->ffwd_by_pre_data[k]];
+                    if (c->permanence < prox->perm_threshold) continue;
+                    u8* o = &L->ffwd_overlap[c->segment_index];
+                    if (*o < 255) ++(*o);
+                }
+            }
         }
     }
 }
@@ -757,27 +856,36 @@ void layer_learn(layer_t* L) {
 }
 
 /* =====================================================================
- * Step orchestration + active <-> active_prev swap
+ * Step orchestration + active_prev := active snapshot.
+ *
+ * Convention: outside of a step, `L->active` always holds the most
+ * recent decision. Other layers' streams that point at `&L->active`
+ * therefore read the latest activations regardless of when in the
+ * step they run. `L->active_prev` is the snapshot of the previous
+ * step's decision; `project` reads it (directly or via a self-pointing
+ * stream).
+ *
+ * To preserve this invariant, we COPY active -> active_prev at the
+ * start of the step, then write the new decision into active. No
+ * pointer swapping. Cost: a small memcpy per step (active is 4 KiB
+ * for 1024 cols).
  * ===================================================================== */
 
-static void layer_swap_active(layer_t* L) {
-    u32* tmp = L->active;       L->active = L->active_prev; L->active_prev = tmp;
-
-    u32* tmpc = L->active_cells;
-    L->active_cells = L->active_prev_cells;
-    L->active_prev_cells = tmpc;
-
-    u32 tmpn = L->active_cells_count;
-    L->active_cells_count = L->active_prev_cells_count;
-    L->active_prev_cells_count = tmpn;
+static void layer_snapshot_active(layer_t* L) {
+    memcpy(L->active_prev, L->active, L->activity_words * sizeof(u32));
+    if (L->active_cells_count > 0) {
+        memcpy(L->active_prev_cells, L->active_cells,
+               L->active_cells_count * sizeof(u32));
+    }
+    L->active_prev_cells_count = L->active_cells_count;
 }
 
 void layer_step(layer_t* L, const u32* active_columns) {
+    layer_snapshot_active(L);
     layer_project(L);
     layer_predict(L);
     layer_decide(L, active_columns);
     layer_learn(L);
-    layer_swap_active(L);
 }
 
 /* =====================================================================

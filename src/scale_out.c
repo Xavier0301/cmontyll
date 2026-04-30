@@ -74,41 +74,36 @@ int main(int argc, char *argv[]) {
         .min_active_cells = 10,
     };
 
-    output_layer_params_t output_layer_params = (output_layer_params_t) {
-        .cells = OUT_CELLS, // cells per col
-        .log_cells = LOG_OUT_CELLS,
+    /* v1: external context not yet wired in the unified layer. The
+     * external_context_segments field is therefore set to 0 here even
+     * though scale_out's NUM_NEIGHBORS topology is still set up below.
+     * Re-enabling cross-LM context is a follow-up: the by-seg arena
+     * already supports it. */
+    u8 l4_feat_segs = 6, l4_loc_segs = 6;
+    u8 l6_loc_segs  = 6, l6_feat_segs = 6;
+    u8 l3_int_segs  = 6, l3_ext_segs  = 0;
 
-        .internal_context_segments = 6,
-        .external_context_segments = 6,
-
-        .external_cells = OUT_CELLS, // external output dim
-        .external_lms = NUM_NEIGHBORS, // num of connected external lms
-        
-        .htm = htm_params,
-        .extended_htm = ext_htm_params
-    };
-
-    feature_layer_params_t feature_layer_params = (feature_layer_params_t) {
-        .cols = num_cols,
-        .cells = 8, // cells per col
-
-        .feature_segments = 6,
-        .location_segments = 6,
-
-        .htm = htm_params
-    };
-
-    location_layer_params_t location_layer_params = (location_layer_params_t) {
-        .cols = 1024,
-        .log_cols_sqrt = (u32) log2(sqrt(1024)), // 5
-        .cells = 8,
-
-        .location_segments = 6,
-        .feature_segments = 6,
-
-        .log_scale = (uvec2d) { .x = 0, .y = 0 },
-
-        .htm = htm_params
+    layer_params_t l4_p = make_l4_params(num_cols, /*cells_per_col*/ 8,
+                                         l4_feat_segs, l4_loc_segs,
+                                         /*conns_per_segment*/ 30,
+                                         htm_params);
+    layer_params_t l6_p = make_l6_params(/*cols*/ 1024, /*cells_per_col*/ 8,
+                                         l6_loc_segs, l6_feat_segs,
+                                         /*conns_per_segment*/ 30,
+                                         htm_params);
+    layer_params_t l3_p = make_l3_params(/*cells*/ OUT_CELLS,
+                                         l3_int_segs, l3_ext_segs,
+                                         /*conns_per_segment*/ 30,
+                                         /*ffwd_conns_per_cell*/ 30,
+                                         /*top_k*/ ext_htm_params.min_active_cells,
+                                         htm_params, ext_htm_params);
+    lm_segment_split_t split = (lm_segment_split_t) {
+        .l4_feature_segments  = l4_feat_segs,
+        .l4_location_segments = l4_loc_segs,
+        .l6_location_segments = l6_loc_segs,
+        .l6_feature_segments  = l6_feat_segs,
+        .l3_internal_segments = l3_int_segs,
+        .l3_external_segments = l3_ext_segs,
     };
 
     int max_threads = omp_get_max_threads(); 
@@ -161,10 +156,12 @@ int main(int argc, char *argv[]) {
         
         learning_module lm;
         init_learning_module(
-            &lm, 
-            output_layer_params, 
-            feature_layer_params,
-            location_layer_params,
+            &lm,
+            l4_p, l6_p, l3_p,
+            split,
+            /*pooler_cols*/ num_cols,
+            /*l6_log_scale*/ (uvec2d) { .x = 0, .y = 0 },
+            /*l6_log_cols_sqrt*/ (u32) log2(sqrt(1024)),
             &tseed
         );
 
@@ -203,8 +200,8 @@ int main(int argc, char *argv[]) {
 
             memcpy(
                 LMATP(global_exchange_buffer, tid, 0), // dst
-                lm.output_net.active, // src
-                OUT_CELL_BYTES // bytes
+                lm.l3.active,                          // src
+                OUT_CELL_BYTES                          // bytes
             );
 
             #pragma omp barrier

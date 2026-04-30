@@ -81,57 +81,58 @@ int main(int argc, char *argv[]) {
         .min_active_cells = 10,
     };
  
+    /* Per-layer shape + decision rule, built via lm_parameters
+     * constructors. The segment splits are passed separately to
+     * init_learning_module via lm_segment_split_t. */
+    u8 l4_feat_segs = 6, l4_loc_segs = 6;
+    u8 l6_loc_segs  = 6, l6_feat_segs = 6;
+    u8 l3_int_segs  = 12, l3_ext_segs = 0;
+
+    layer_params_t l4_p = make_l4_params(num_cols, /*cells_per_col*/ 8,
+                                         l4_feat_segs, l4_loc_segs,
+                                         /*conns_per_segment*/ 30,
+                                         htm_params);
+
+    layer_params_t l6_p = make_l6_params(/*cols*/ 1024, /*cells_per_col*/ 8,
+                                         l6_loc_segs, l6_feat_segs,
+                                         /*conns_per_segment*/ 30,
+                                         htm_params);
+
+    layer_params_t l3_p = make_l3_params(/*cells*/ 1024,
+                                         l3_int_segs, l3_ext_segs,
+                                         /*conns_per_segment*/ 30,
+                                         /*ffwd_conns_per_cell*/ 30,
+                                         /*top_k*/ ext_htm_params.min_active_cells,
+                                         htm_params, ext_htm_params);
+
+    lm_segment_split_t split = (lm_segment_split_t) {
+        .l4_feature_segments  = l4_feat_segs,
+        .l4_location_segments = l4_loc_segs,
+        .l6_location_segments = l6_loc_segs,
+        .l6_feature_segments  = l6_feat_segs,
+        .l3_internal_segments = l3_int_segs,
+        .l3_external_segments = l3_ext_segs,
+    };
+
     learning_module lm;
     init_learning_module(
-        &lm, 
-        (output_layer_params_t) {
-            .cells = 1024, // cells per col
-            .log_cells = 10,
-
-            .internal_context_segments = 12,
-            .external_context_segments = 0,
-
-            .external_cells = 1024, // external output dim
-            .external_lms = 0, // num of connected external lms
-            
-            .htm = htm_params,
-            .extended_htm = ext_htm_params
-        }, 
-        (feature_layer_params_t) {
-            .cols = num_cols,
-            .cells = 8, // cells per col
-
-            .feature_segments = 6,
-            .location_segments = 6,
-
-            .htm = htm_params
-        },
-        (location_layer_params_t) {
-            .cols = 1024,
-            .log_cols_sqrt = (u32) log2(sqrt(1024)), // 5
-            .cells = 8,
-
-            .location_segments = 6,
-            .feature_segments = 6,
-
-            .log_scale = (uvec2d) { .x = 0, .y = 0 },
-
-            .htm = htm_params
-        },
+        &lm,
+        l4_p, l6_p, l3_p,
+        split,
+        /*pooler_cols*/ num_cols,
+        /*l6_log_scale*/ (uvec2d) { .x = 0, .y = 0 },
+        /*l6_log_cols_sqrt*/ (u32) log2(sqrt(1024)),
         &seed
     );
 
     vec2d movement = { .x = 0, .y = 0 };
 
     printf("\n");
-    feature_layer_print_params(lm.feature_net.p);
-    feature_layer_print_memory_footprint(lm.feature_net.p);
+    layer_print_memory_footprint(&lm.l4);
     printf("\n");
-    location_layer_print_params(lm.location_net.p);
-    location_layer_print_memory_footprint(lm.location_net.p);
+    layer_print_memory_footprint(&lm.l6);
     printf("\n");
-    output_layer_print_params(lm.output_net.p);
-    output_layer_print_memory_footprint(lm.output_net.p);
+    layer_print_memory_footprint(&lm.l3);
     printf("\n");
 
     print_grid(&env);
@@ -159,7 +160,7 @@ int main(int argc, char *argv[]) {
         printf("column activation sparsity: ");
         print_spvec_u8(f.active_columns, f.num_columns);
 
-        print_packed_spvec_u32(lm.output_net.active, lm.output_net.p.cells);
+        print_packed_spvec_u32(lm.l3.active, lm.l3.p.cols);
 
         printf("\n");      
 #endif

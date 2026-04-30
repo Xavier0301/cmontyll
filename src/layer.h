@@ -64,8 +64,24 @@ typedef struct input_stream_t_ {
     /* packed-32 bitarray; the layer reads but never writes it. */
     const u32* activity;
 
-    /* Number of valid bit indices; used to size the by-pre index. */
-    u32 source_cells;
+    /* Source layout. Two cases:
+     *   FLAT  (source_cells_per_col == 0 or 1):
+     *     activity is a packed-32 bitarray of `source_cols` bits;
+     *     bit-index of cell c is just c.
+     *   PER-COLUMN (1 < source_cells_per_col <= 32):
+     *     activity is u32[source_cols], one full word per col;
+     *     bit-index of (col, cell) is (col << 5) | cell.
+     *     Source bit-indices in [col<<5 | cells_per_col, (col+1)<<5) are
+     *     gaps -- never set, never drawn from in init.
+     *
+     * `source_cells` is the *logical* total = source_cols when flat, or
+     * source_cols * source_cells_per_col when per-column. `init` draws
+     * (col, cell) pairs uniformly so distal connections never land in
+     * the gap bits. `project` iterates by source-cell, computing the
+     * bit-index appropriately. */
+    u32 source_cols;
+    u8  source_cells_per_col;       /* 0 or 1 == flat; otherwise per-col */
+    u32 source_cells;               /* derived: source_cols * max(1, sccpc) */
 
     /* DISTAL only: how many segments per cell of THIS layer draw their
      * incoming connections from this stream. Must sum across distal

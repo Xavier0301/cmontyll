@@ -1,4 +1,5 @@
 #include "lm_parameters.h"
+#include "layer.h"
 
 /* ============== HTM ============== */
 
@@ -74,4 +75,77 @@ void output_layer_print_params(output_layer_params_t p) {
 #else
     (void) p;
 #endif
+}
+
+/* ============== UNIFIED LAYER CONSTRUCTORS ==============
+ *
+ * The htm_params_t embedded in each `layer_params_t` carries the
+ * permanence and threshold knobs that survive to the unified layer's
+ * project / predict / learn rules. Per-stream overrides
+ * (perm_threshold, activation_threshold) live on the input_stream_t
+ * descriptors built by the caller. */
+
+struct layer_params_t_ make_l4_params(u16 cols, u8 cells_per_col,
+                                      u8 feature_segments, u8 location_segments,
+                                      u16 conns_per_segment,
+                                      htm_params_t htm) {
+    layer_params_t p = (layer_params_t) {
+        .cols = cols,
+        .cells_per_col = cells_per_col,
+        .segments_per_cell = (u8)(feature_segments + location_segments),
+        .conns_per_segment = conns_per_segment,
+        .ffwd_conns_per_cell = 0,        /* L4 proximal is the column gate, not a learnable arena */
+        .decision = DECIDE_BURST_OR_PREDICTED,
+        .top_k = 0,
+        .htm = htm,
+        .enable_distal_learning = 1,
+        .enable_decay = 1,
+        .enable_ffwd_learning = 0,
+    };
+    return p;
+}
+
+struct layer_params_t_ make_l6_params(u16 cols, u8 cells_per_col,
+                                      u8 location_segments, u8 feature_segments,
+                                      u16 conns_per_segment,
+                                      htm_params_t htm) {
+    layer_params_t p = (layer_params_t) {
+        .cols = cols,
+        .cells_per_col = cells_per_col,
+        .segments_per_cell = (u8)(location_segments + feature_segments),
+        .conns_per_segment = conns_per_segment,
+        .ffwd_conns_per_cell = 0,
+        .decision = DECIDE_BURST_OR_PREDICTED,
+        .top_k = 0,
+        .htm = htm,
+        .enable_distal_learning = 1,
+        .enable_decay = 1,
+        .enable_ffwd_learning = 0,
+    };
+    return p;
+}
+
+struct layer_params_t_ make_l3_params(u16 cells,
+                                      u8 internal_context_segments,
+                                      u8 external_context_segments,
+                                      u16 conns_per_segment,
+                                      u16 ffwd_conns_per_cell,
+                                      u16 top_k,
+                                      htm_params_t htm,
+                                      extended_htm_params_t ext) {
+    (void) ext;  /* extended thresholds applied at stream-config time */
+    layer_params_t p = (layer_params_t) {
+        .cols = cells,
+        .cells_per_col = 1,             /* L3 is a flat layer */
+        .segments_per_cell = (u8)(internal_context_segments + external_context_segments),
+        .conns_per_segment = conns_per_segment,
+        .ffwd_conns_per_cell = ffwd_conns_per_cell,
+        .decision = DECIDE_TOPK_PREDICTED_FFWD,
+        .top_k = top_k,
+        .htm = htm,
+        .enable_distal_learning = 1,
+        .enable_decay = 0,              /* legacy L3 has no decay */
+        .enable_ffwd_learning = 0,      /* legacy TODO */
+    };
+    return p;
 }

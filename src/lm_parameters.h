@@ -84,4 +84,36 @@ typedef struct output_layer_params_t_ {
 
 void output_layer_print_params(output_layer_params_t p);
 
+/* ============== UNIFIED LAYER CONSTRUCTORS ==============
+ *
+ * Each constructor produces a `layer_params_t` (defined in layer.h)
+ * configured for one of the four cortical-column cell-style layers.
+ * Stream wiring (which other layers feed in) is the caller's job and
+ * happens at `layer_init_connections` time -- the params returned here
+ * only describe shape and decision rule.
+ *
+ * The constructors are defined in lm_parameters.c. Header forward-decls
+ * `struct layer_params_t_` so callers that only need the legacy params
+ * can include this header without dragging layer.h in. */
+struct layer_params_t_;
+
+struct layer_params_t_ make_l4_params(u16 cols, u8 cells_per_col,
+                                      u8 feature_segments, u8 location_segments,
+                                      u16 conns_per_segment,
+                                      htm_params_t htm);
+
+struct layer_params_t_ make_l6_params(u16 cols, u8 cells_per_col,
+                                      u8 location_segments, u8 feature_segments,
+                                      u16 conns_per_segment,
+                                      htm_params_t htm);
+
+struct layer_params_t_ make_l3_params(u16 cells,
+                                      u8 internal_context_segments,
+                                      u8 external_context_segments,
+                                      u16 conns_per_segment,
+                                      u16 ffwd_conns_per_cell,
+                                      u16 top_k,
+                                      htm_params_t htm,
+                                      extended_htm_params_t ext);
+
 #endif
