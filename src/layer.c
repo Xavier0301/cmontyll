@@ -722,9 +722,8 @@ static void learn_collect_burst(layer_t* L) {
             ? (layer_bit_get(L->predicted, col) ? 1u : 0u)
             : (L->predicted[col] & cell_mask);
 
-        if (act_word == 0) continue;
-
-        if (pred_word != 0) {
+        /* REINFORCE / bursting paths only fire on active columns. */
+        if (act_word != 0 && pred_word != 0) {
             /* correctly predicted cells: REINFORCE every spiking segment
              * (active AND predicted bits both set) */
             u32 ap = act_word & pred_word;
@@ -738,21 +737,7 @@ static void learn_collect_burst(layer_t* L) {
                     }
                 }
             }
-            /* decay: predicted but not active */
-            if (L->p.enable_decay) {
-                u32 pn = pred_word & ~act_word;
-                while (pn) {
-                    u32 cell = __builtin_ctz(pn);
-                    pn &= pn - 1u;
-                    for (u32 seg = 0; seg < segs; ++seg) {
-                        u32 g = segment_global_index(L, col, cell, seg);
-                        if (L->segment_meta[g].spike_count >= theta_d) {
-                            push_update(L, g, UPDATE_DECAY);
-                        }
-                    }
-                }
-            }
-        } else {
+        } else if (act_word != 0) {
             /* bursting column: pick winner cell + best segment */
             u32 winner_cell = 0;
             u32 winner_score = 0;
@@ -778,6 +763,23 @@ static void learn_collect_burst(layer_t* L) {
             }
             u32 g = segment_global_index(L, col, winner_cell, best_seg);
             push_update(L, g, UPDATE_REINFORCE);
+        }
+
+        /* DECAY on predicted-but-inactive cells. Applies regardless of
+         * whether the column itself is gated open, since a prediction
+         * that does not pan out should be weakened either way. */
+        if (L->p.enable_decay) {
+            u32 pn = pred_word & ~act_word;
+            while (pn) {
+                u32 cell = __builtin_ctz(pn);
+                pn &= pn - 1u;
+                for (u32 seg = 0; seg < segs; ++seg) {
+                    u32 g = segment_global_index(L, col, cell, seg);
+                    if (L->segment_meta[g].spike_count >= theta_d) {
+                        push_update(L, g, UPDATE_DECAY);
+                    }
+                }
+            }
         }
     }
 }

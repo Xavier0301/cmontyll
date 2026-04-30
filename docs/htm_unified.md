@@ -105,7 +105,7 @@ Cross-LM connections (used by the L3 output layer's external context) follow the
 
 Open hooks not implemented in v1:
 
-- L3 feedforward learning (legacy TODO at [output_layer.c:256](../src/output_layer.c)). The proximal arena has the symmetric by-seg index already, so flipping `enable_ffwd_learning` is a one-line change in `learn`.
+- L3 feedforward learning (legacy TODO carried over from the pre-unification `output_layer.c`). The proximal arena has the symmetric by-cell index already, so flipping `enable_ffwd_learning` is a one-line change in `learn`.
 - Topology-aware proximal connections (currently a uniform random subset).
 - Multi-threading. `project` parallelizes per active source cell; `learn` parallelizes per update-set segment.
 - Bridge to the sibling `montx-htm/` system. The unified `layer_t` produces and consumes plain `u32*` packed-32 bitarrays — the bridge is a thin SDR adapter, slated for the next session.

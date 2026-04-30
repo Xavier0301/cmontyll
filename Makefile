@@ -34,13 +34,24 @@ ALL_SRCS := $(wildcard src/*.c)
 # Filter out mains
 SHARED_SRCS := $(filter-out $(MAIN_SRCS), $(ALL_SRCS))
 
+# Subset of SHARED_SRCS sufficient to link the unified layer + its tests.
+# Kept hand-curated so `make test` does not pull in the redesign-broken
+# pooler/sensor/grid environment.
+LAYER_TEST_SRCS := src/layer.c src/lm_parameters.c src/distributions.c \
+                   src/tensor.c src/lmat.c src/algorithms.c
+
 # ---------------------------------------------------------
 # TARGETS
 # ---------------------------------------------------------
 
-.PHONY: all clean help
+.PHONY: all clean help test
 
 all: main
+
+# Unified-layer unit tests (no dependency on pooler / sensor / env)
+test: tests/test_layer.c $(LAYER_TEST_SRCS)
+	$(CC) $(CFLAGS) -DPRINT=0 -O0 -g -Isrc $^ -o $@ $(LDLIBS)
+	./$@
 
 # Standard: optimized O3
 main: src/main.c $(SHARED_SRCS)
@@ -64,7 +75,7 @@ scale-out-gcc: src/scale_out.c $(SHARED_SRCS)
 	$(GCC_BIN) $(CFLAGS) $(MULTI_LM_ENV_FLAGS) -fopenmp -g -fno-omit-frame-pointer -DNDEBUG -O3 $^ -o $@ $(LDLIBS)
 
 clean:
-	rm -f main main_opt scale-out scale-out-gcc *.o *~ 
+	rm -f main main_opt scale-out scale-out-gcc test *.o *~
 	rm -rf *.dSYM
 
 help:
